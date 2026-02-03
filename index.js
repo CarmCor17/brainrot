@@ -13,13 +13,34 @@ const client = new Client({
 
 const ZONA_HORARIA = "America/Hermosillo";
 
-// IDs de canales separados por coma en .env
-if (!process.env.ID_CANAL_EVENTOS) {
-  console.error("❌ No se ha definido ID_CANAL_EVENTOS en las variables de entorno.");
+// Servidores y canales desde .env
+// Formato: SERVIDOR_ID:CANAL_ID1,CANAL_ID2;SERVIDOR_ID2:CANAL_ID3
+if (!process.env.SERVIDORES_Y_CANALES) {
+  console.error("❌ No se ha definido SERVIDORES_Y_CANALES en las variables de entorno.");
   process.exit(1);
 }
 
-const CANALES_EVENTOS = process.env.ID_CANAL_EVENTOS.split(",").map(id => id.trim());
+// Parsear SERVIDORES_Y_CANALES
+const SERVIDORES = {};
+process.env.SERVIDORES_Y_CANALES.split(";").forEach(entry => {
+  const [serverId, channels] = entry.split(":");
+  if (serverId && channels) {
+    SERVIDORES[serverId.trim()] = channels.split(",").map(id => id.trim());
+  }
+});
+
+console.log("🔹 SERVIDORES Y CANALES CONFIGURADOS:", SERVIDORES);
+
+// Depuración: verificar canales
+(async () => {
+  for (const serverId in SERVIDORES) {
+    for (const canalId of SERVIDORES[serverId]) {
+      const canal = await client.channels.fetch(canalId).catch(() => null);
+      if (canal) console.log("✅ Canal encontrado:", canal.id, canal.name);
+      else console.warn("❌ No se pudo encontrar el canal:", canalId);
+    }
+  }
+})();
 
 // Definición de eventos
 const eventos = [
@@ -28,10 +49,10 @@ const eventos = [
   { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 03:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
 ];
 
-const mensajesDinamicos = {}; // Para cada canal
+const mensajesDinamicos = {}; // Mensaje por canal
 const ultimoEmbedStringPorCanal = {};
 
-// Calcula tiempo restante
+// Función tiempo restante
 function tiempoRestante(timestamp) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   let diff = timestamp - ahora;
@@ -46,7 +67,7 @@ function tiempoRestante(timestamp) {
   return `${horas}h ${minutos}m`;
 }
 
-// Ordena eventos por próxima hora
+// Ordenar eventos por próximo
 function eventosOrdenados() {
   return eventos.slice().sort((a, b) => a.nextUnix - b.nextUnix);
 }
@@ -80,31 +101,33 @@ async function actualizarMensajes() {
     embed.addFields({ name: nombre, value: valor, inline: false });
   });
 
-  // Actualiza cada canal
-  CANALES_EVENTOS.forEach(async id => {
-    const canal = client.channels.cache.get(id);
-    if (!canal) return;
+  // Recorrer cada servidor y canal
+  for (const serverId in SERVIDORES) {
+    for (const canalId of SERVIDORES[serverId]) {
+      const canal = await client.channels.fetch(canalId).catch(() => null);
+      if (!canal) {
+        console.warn(`⚠️ No se pudo encontrar el canal: ${canalId}`);
+        continue;
+      }
 
-    if (!mensajesDinamicos[id]) {
-      // Buscar mensaje anterior
-      const mensajes = await canal.messages.fetch({ limit: 10 }).catch(() => []);
-      const encontrado = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
-      if (encontrado) {
-        mensajesDinamicos[id] = encontrado;
-      } else {
-        mensajesDinamicos[id] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
+      if (!mensajesDinamicos[canalId]) {
+        const mensajes = await canal.messages.fetch({ limit: 10 }).catch(() => []);
+        const encontrado = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
+        if (encontrado) mensajesDinamicos[canalId] = encontrado;
+        else mensajesDinamicos[canalId] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
+      }
+
+      const mensaje = mensajesDinamicos[canalId];
+      if (!mensaje) continue;
+
+      const embedString = JSON.stringify(embed.data);
+      if (embedString !== ultimoEmbedStringPorCanal[canalId]) {
+        await mensaje.edit({ embeds: [embed] }).catch(() => null);
+        ultimoEmbedStringPorCanal[canalId] = embedString;
+        console.log(`✅ Embed actualizado en canal ${canalId}`);
       }
     }
-
-    const mensaje = mensajesDinamicos[id];
-    if (!mensaje) return;
-
-    const embedString = JSON.stringify(embed.data);
-    if (embedString !== ultimoEmbedStringPorCanal[id]) {
-      await mensaje.edit({ embeds: [embed] }).catch(() => null);
-      ultimoEmbedStringPorCanal[id] = embedString;
-    }
-  });
+  }
 }
 
 // Programar avisos en todos los canales
@@ -117,18 +140,22 @@ function programarEvento(evento) {
 
   const avisoUnix = evento.nextUnix - 10 * 60 * 1000;
 
-  setTimeout(() => {
-    CANALES_EVENTOS.forEach(id => {
-      const canal = client.channels.cache.get(id);
-      if (canal) canal.send(`⏰ ¡Atención! El evento **${evento.nombre}** comienza en 10 minutos (${moment(evento.nextUnix).tz(ZONA_HORARIA).format("HH:mm:ss")} hs). ¡Prepárate!`).catch(() => null);
-    });
+  setTimeout(async () => {
+    for (const serverId in SERVIDORES) {
+      for (const canalId of SERVIDORES[serverId]) {
+        const canal = await client.channels.fetch(canalId).catch(() => null);
+        if (canal) canal.send(`⏰ ¡Atención! El evento **${evento.nombre}** comienza en 10 minutos (${moment(evento.nextUnix).tz(ZONA_HORARIA).format("HH:mm:ss")} hs). ¡Prepárate!`).catch(() => null);
+      }
+    }
 
     const tiempoParaEvento = evento.nextUnix - moment().tz(ZONA_HORARIA).valueOf();
-    setTimeout(() => {
-      CANALES_EVENTOS.forEach(id => {
-        const canal = client.channels.cache.get(id);
-        if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`).catch(() => null);
-      });
+    setTimeout(async () => {
+      for (const serverId in SERVIDORES) {
+        for (const canalId of SERVIDORES[serverId]) {
+          const canal = await client.channels.fetch(canalId).catch(() => null);
+          if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`).catch(() => null);
+        }
+      }
       evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
       programarEvento(evento);
     }, tiempoParaEvento);
@@ -137,12 +164,10 @@ function programarEvento(evento) {
 }
 
 // Inicio del bot
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log("🤖 Bot encendido correctamente");
-
   setInterval(actualizarMensajes, 5000);
   actualizarMensajes();
-
   eventos.forEach(evento => programarEvento(evento));
 });
 
