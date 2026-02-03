@@ -144,8 +144,10 @@ client.on("messageCreate", message => {
   if (message.content === "!ping") message.channel.send("🏓 Pong! El bot funciona");
 });
 
-console.log("TOKEN:", process.env.DISCORD_TOKEN);
-console.log("TOKEN LEN:", process.env.DISCORD_TOKEN?.length);
+// Solo confirma que el token existe, sin mostrarlo
+console.log("🤖 Bot encendido correctamente");
+console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
+
 
 
 client.login(process.env.DISCORD_TOKEN);
