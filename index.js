@@ -34,9 +34,9 @@ console.log("🔹 SERVIDORES Y CANALES CONFIGURADOS:", SERVIDORES);
 
 // Definición de eventos
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-03-02 2:20", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
-  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-03-02 04:30", ZONA_HORARIA).valueOf(), intervaloHoras: 3, color: 0x00FF00 },
-  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-03-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 6, color: 0xFFD700 }
+  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 14:00", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
+  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 04:30", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x00FF00 },
+  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
 ];
 
 const mensajesDinamicos = {}; // Mensaje por canal
