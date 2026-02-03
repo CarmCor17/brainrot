@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const moment = require("moment-timezone");
 
@@ -141,6 +143,10 @@ client.on("messageCreate", message => {
   if (message.author.bot) return;
   if (message.content === "!ping") message.channel.send("🏓 Pong! El bot funciona");
 });
+
+console.log("TOKEN:", process.env.DISCORD_TOKEN);
+console.log("TOKEN LEN:", process.env.DISCORD_TOKEN?.length);
+
 
 client.login(process.env.DISCORD_TOKEN);
 
