@@ -12,7 +12,14 @@ const client = new Client({
 });
 
 const ZONA_HORARIA = "America/Hermosillo";
-const ID_CANAL_EVENTOS = "1467988584966652073";
+
+// IDs de canales separados por coma en .env
+if (!process.env.ID_CANAL_EVENTOS) {
+  console.error("❌ No se ha definido ID_CANAL_EVENTOS en las variables de entorno.");
+  process.exit(1);
+}
+
+const CANALES_EVENTOS = process.env.ID_CANAL_EVENTOS.split(",").map(id => id.trim());
 
 // Definición de eventos
 const eventos = [
@@ -21,8 +28,8 @@ const eventos = [
   { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 03:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
 ];
 
-let mensajeDinamico;
-let ultimoEmbedString = "";
+const mensajesDinamicos = {}; // Para cada canal
+const ultimoEmbedStringPorCanal = {};
 
 // Calcula tiempo restante
 function tiempoRestante(timestamp) {
@@ -44,10 +51,8 @@ function eventosOrdenados() {
   return eventos.slice().sort((a, b) => a.nextUnix - b.nextUnix);
 }
 
-// Actualiza el embed dinámico
-async function actualizarMensaje() {
-  if (!mensajeDinamico) return;
-
+// Actualiza embeds en todos los canales
+async function actualizarMensajes() {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   const embed = new EmbedBuilder()
     .setTitle("📅 Próximos eventos de Steal the Brainrot")
@@ -75,18 +80,34 @@ async function actualizarMensaje() {
     embed.addFields({ name: nombre, value: valor, inline: false });
   });
 
-  const embedString = JSON.stringify(embed.data);
-  if (embedString !== ultimoEmbedString) {
-    try {
-      await mensajeDinamico.edit({ embeds: [embed] });
-      ultimoEmbedString = embedString;
-    } catch (error) {
-      console.error("No se pudo actualizar el mensaje dinámico:", error);
+  // Actualiza cada canal
+  CANALES_EVENTOS.forEach(async id => {
+    const canal = client.channels.cache.get(id);
+    if (!canal) return;
+
+    if (!mensajesDinamicos[id]) {
+      // Buscar mensaje anterior
+      const mensajes = await canal.messages.fetch({ limit: 10 }).catch(() => []);
+      const encontrado = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
+      if (encontrado) {
+        mensajesDinamicos[id] = encontrado;
+      } else {
+        mensajesDinamicos[id] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
+      }
     }
-  }
+
+    const mensaje = mensajesDinamicos[id];
+    if (!mensaje) return;
+
+    const embedString = JSON.stringify(embed.data);
+    if (embedString !== ultimoEmbedStringPorCanal[id]) {
+      await mensaje.edit({ embeds: [embed] }).catch(() => null);
+      ultimoEmbedStringPorCanal[id] = embedString;
+    }
+  });
 }
 
-// Programar avisos de eventos
+// Programar avisos en todos los canales
 function programarEvento(evento) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
 
@@ -97,14 +118,17 @@ function programarEvento(evento) {
   const avisoUnix = evento.nextUnix - 10 * 60 * 1000;
 
   setTimeout(() => {
-    const canal = client.channels.cache.get(ID_CANAL_EVENTOS);
-    if (canal) {
-      canal.send(`⏰ ¡Atención! El evento **${evento.nombre}** comienza en 10 minutos (${moment(evento.nextUnix).tz(ZONA_HORARIA).format("HH:mm:ss")} hs). ¡Prepárate!`);
-    }
+    CANALES_EVENTOS.forEach(id => {
+      const canal = client.channels.cache.get(id);
+      if (canal) canal.send(`⏰ ¡Atención! El evento **${evento.nombre}** comienza en 10 minutos (${moment(evento.nextUnix).tz(ZONA_HORARIA).format("HH:mm:ss")} hs). ¡Prepárate!`).catch(() => null);
+    });
 
     const tiempoParaEvento = evento.nextUnix - moment().tz(ZONA_HORARIA).valueOf();
     setTimeout(() => {
-      if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`);
+      CANALES_EVENTOS.forEach(id => {
+        const canal = client.channels.cache.get(id);
+        if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`).catch(() => null);
+      });
       evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
       programarEvento(evento);
     }, tiempoParaEvento);
@@ -116,18 +140,8 @@ function programarEvento(evento) {
 client.once("clientReady", async () => {
   console.log("🤖 Bot encendido correctamente");
 
-  const canal = client.channels.cache.get(ID_CANAL_EVENTOS);
-  if (!canal) return console.error("No se encontró el canal de eventos.");
-
-  const mensajes = await canal.messages.fetch({ limit: 10 });
-  mensajeDinamico = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
-
-  if (!mensajeDinamico) {
-    mensajeDinamico = await canal.send({ content: "Cargando próximos eventos..." });
-  }
-
-  setInterval(actualizarMensaje, 5000);
-  actualizarMensaje();
+  setInterval(actualizarMensajes, 5000);
+  actualizarMensajes();
 
   eventos.forEach(evento => programarEvento(evento));
 });
@@ -136,18 +150,12 @@ client.once("clientReady", async () => {
 client.on("messageCreate", message => {
   if (message.author.bot) return;
   if (message.content.toLowerCase() === "!ping") {
-    message.channel.send("🏓 Pong! El bot funciona").catch(console.error);
+    message.channel.send("🏓 Pong! El bot funciona").catch(() => null);
   }
 });
 
-// Confirmación de token cargado sin exponerlo
+// Confirmación de token cargado
 console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
 
-// Login seguro
+// Login
 client.login(process.env.DISCORD_TOKEN);
-
-
-
-
-
-
