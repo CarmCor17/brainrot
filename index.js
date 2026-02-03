@@ -1,8 +1,12 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const moment = require("moment-timezone");
+const fs = require("fs");
 
-// Configuración del bot
+const ZONA_HORARIA = "America/Hermosillo";
+const AVISO_BORRADO_MS = 10 * 60 * 1000;
+const ESTADO_FILE = "./estado.json";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -11,189 +15,162 @@ const client = new Client({
   ]
 });
 
-// Zona horaria principal para cálculos internos
-const ZONA_HORARIA = "America/Hermosillo";
-
-// Servidores y canales desde .env
-// Formato: SERVIDOR_ID:CANAL_ID1,CANAL_ID2;SERVIDOR_ID2:CANAL_ID3
+// ================= SERVIDORES =================
 if (!process.env.SERVIDORES_Y_CANALES) {
-  console.error("❌ No se ha definido SERVIDORES_Y_CANALES en las variables de entorno.");
+  console.error("❌ Falta SERVIDORES_Y_CANALES");
   process.exit(1);
 }
 
-// Parsear SERVIDORES_Y_CANALES
 const SERVIDORES = {};
-process.env.SERVIDORES_Y_CANALES.split(";").forEach(entry => {
-  const [serverId, channels] = entry.split(":");
-  if (serverId && channels) {
-    SERVIDORES[serverId.trim()] = channels.split(",").map(id => id.trim());
-  }
+process.env.SERVIDORES_Y_CANALES.split(";").forEach(e => {
+  const [s, c] = e.split(":");
+  if (s && c) SERVIDORES[s.trim()] = c.split(",").map(x => x.trim());
 });
 
-console.log("🔹 SERVIDORES Y CANALES CONFIGURADOS:", SERVIDORES);
-
-// Función para calcular el próximo inicio del evento con horario fijo
-function nextUnixEvento(hora, minuto, intervaloHoras) {
-  const ahora = moment().tz(ZONA_HORARIA);
-  let eventoHoy = ahora.clone().hour(hora).minute(minuto).second(0);
-
-  // Si ya pasó, sumar intervalos hasta que quede en el futuro
-  while (eventoHoy.valueOf() <= ahora.valueOf()) {
-    eventoHoy.add(intervaloHoras, "hours");
-  }
-  return eventoHoy.valueOf();
-}
-
-// Definición de eventos con horarios fijos
+// ================= EVENTOS (ORDEN REAL) =================
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: nextUnixEvento(2, 35, 4), intervaloHoras: 4, color: 0x4B4B4B },
-  { nombre: "🧪 Toxic", nextUnix: nextUnixEvento(4, 30, 4), intervaloHoras: 4, color: 0x00FF00 },
-  { nombre: "🍀 Lucky Rot", nextUnix: nextUnixEvento(7, 0, 5), intervaloHoras: 5, color: 0xFFD700 }
+  { nombre: "🌑 Darkness", intervaloHoras: 4, color: 0x2B2B2B },
+  { nombre: "🧪 Toxic", intervaloHoras: 4, color: 0x00FF66 },
+  { nombre: "🍀 Lucky Rot", intervaloHoras: 5, color: 0x66FF00 },
+  { nombre: "💧 Aqua", intervaloHoras: 4, color: 0x00E5FF },
+  { nombre: "💜 Neon", intervaloHoras: 4, color: 0xB026FF },
+  { nombre: "🍫 Chocolate", intervaloHoras: 6, color: 0x5A2D0C }
 ];
 
-const mensajesDinamicos = {}; // Mensaje por canal
-const ultimoEmbedStringPorCanal = {};
+// ================= ESTADO PERSISTENTE =================
+let indiceEventoActual = 0;
+let inicioEventoActual = Date.now();
 
-// Función tiempo restante
-function tiempoRestante(timestamp) {
-  const ahora = moment().tz(ZONA_HORARIA).valueOf();
-  let diff = timestamp - ahora;
-  if (diff < 0) diff = 0;
-
-  const totalSegundos = Math.floor(diff / 1000);
-  const horas = Math.floor(totalSegundos / 3600);
-  const minutos = Math.floor((totalSegundos % 3600) / 60);
-  const segundos = totalSegundos % 60;
-
-  if (totalSegundos < 60) return `${segundos}s`;
-  return `${horas}h ${minutos}m`;
+function guardarEstado() {
+  fs.writeFileSync(
+    ESTADO_FILE,
+    JSON.stringify(
+      { indiceEvento: indiceEventoActual, inicioEvento: inicioEventoActual },
+      null,
+      2
+    )
+  );
 }
 
-// Ordenar eventos por próximo
-function eventosOrdenados() {
-  return eventos.slice().sort((a, b) => a.nextUnix - b.nextUnix);
+function cargarEstado() {
+  if (!fs.existsSync(ESTADO_FILE)) return;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(ESTADO_FILE));
+    indiceEventoActual = data.indiceEvento ?? 0;
+    inicioEventoActual = data.inicioEvento ?? Date.now();
+    console.log("📂 Estado cargado desde archivo");
+  } catch {
+    console.log("⚠️ No se pudo leer estado.json, usando valores por defecto");
+  }
 }
 
-// Actualiza mensajes fijos con tiempo restante
-async function actualizarMensajes() {
-  const ahora = moment().tz(ZONA_HORARIA).valueOf();
+// ================= UTILIDADES =================
+function eventoActual() {
+  return eventos[indiceEventoActual];
+}
+
+function finEvento() {
+  return inicioEventoActual + eventoActual().intervaloHoras * 60 * 60 * 1000;
+}
+
+function tiempoRestante(fin) {
+  const diff = Math.max(0, fin - Date.now());
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+
+// ================= MENSAJE FIJO =================
+const mensajesFijos = {};
+
+async function actualizarTabla() {
+  const ahora = Date.now();
+
   const embed = new EmbedBuilder()
-    .setTitle("📅 Próximos eventos de Steal the Brainrot")
+    .setTitle("📅 Eventos – Steal the Brainrot")
     .setColor(0x00FF00)
-    .setTimestamp(moment().tz(ZONA_HORARIA).toDate())
-    .setFooter({ text: "Tiempo restante mostrado para todos los usuarios" });
+    .setTimestamp(new Date());
 
-  const ordenados = eventosOrdenados();
-  const proximoEvento = ordenados.find(e => e.nextUnix > ahora) || ordenados[0];
-
-  ordenados.forEach(evento => {
-    let nombre = evento.nombre;
-    let valor = "";
-    const inicio = evento.nextUnix;
-    const fin = evento.nextUnix + evento.intervaloHoras * 60 * 60 * 1000;
-
-    if (ahora >= inicio && ahora < fin) {
-      nombre = `🔥 ${nombre} (En curso)`;
-      valor = `🕒 Termina en ${tiempoRestante(fin)}`;
+  eventos.forEach((e, i) => {
+    if (i === indiceEventoActual && ahora < finEvento()) {
+      embed.addFields({
+        name: `🔥 ${e.nombre} (Activo)`,
+        value: `⏳ Termina en ${tiempoRestante(finEvento())}`
+      });
     } else {
-      if (evento === proximoEvento) nombre = `➡️ **${nombre}**`;
-      valor = `🕒 Comienza en ${tiempoRestante(inicio)}`;
+      embed.addFields({
+        name: e.nombre,
+        value: "⏱️ En rotación"
+      });
     }
-
-    embed.addFields({ name: nombre, value: valor, inline: false });
   });
 
-  for (const serverId in SERVIDORES) {
-    for (const canalId of SERVIDORES[serverId]) {
-      const canal = await client.channels.fetch(canalId).catch(() => null);
+  for (const sid in SERVIDORES) {
+    for (const cid of SERVIDORES[sid]) {
+      const canal = await client.channels.fetch(cid).catch(() => null);
       if (!canal) continue;
 
-      if (!mensajesDinamicos[canalId]) {
-        const mensajes = await canal.messages.fetch({ limit: 10 }).catch(() => []);
-        const encontrado = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
-        if (encontrado) {
-          mensajesDinamicos[canalId] = encontrado;
-        } else {
-          mensajesDinamicos[canalId] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
-        }
+      if (!mensajesFijos[cid]) {
+        mensajesFijos[cid] = await canal.send("Cargando eventos...");
       }
 
-      const mensaje = mensajesDinamicos[canalId];
-      if (!mensaje) continue;
-
-      const embedString = JSON.stringify(embed.data);
-      if (embedString !== ultimoEmbedStringPorCanal[canalId]) {
-        await mensaje.edit({ embeds: [embed] }).catch(() => null);
-        ultimoEmbedStringPorCanal[canalId] = embedString;
-      }
+      await mensajesFijos[cid].edit({ embeds: [embed] }).catch(() => null);
     }
   }
 }
 
-// Programar eventos con alertas de 10 minutos
-function programarEvento(evento) {
-  const ahora = moment().tz(ZONA_HORARIA).valueOf();
+// ================= ALERTAS =================
+async function enviarAviso(texto, embed = null) {
+  for (const sid in SERVIDORES) {
+    for (const cid of SERVIDORES[sid]) {
+      const canal = await client.channels.fetch(cid).catch(() => null);
+      if (!canal) continue;
 
-  while (evento.nextUnix <= ahora) {
-    evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
-  }
-
-  const avisoUnix = evento.nextUnix - 10 * 60 * 1000; // 10 minutos antes
-
-  setTimeout(async () => {
-    for (const serverId in SERVIDORES) {
-      for (const canalId of SERVIDORES[serverId]) {
-        const canal = await client.channels.fetch(canalId).catch(() => null);
-        if (!canal) continue;
-
-        if (mensajesDinamicos[canalId]) {
-          await mensajesDinamicos[canalId].delete().catch(() => null);
-          mensajesDinamicos[canalId] = null;
-        }
-
-        const embed = new EmbedBuilder()
-          .setTitle(`⏰ ¡El evento ${evento.nombre} comienza en 10 minutos!`)
-          .setColor(evento.color)
-          .setTimestamp(moment().tz(ZONA_HORARIA).toDate())
-          .addFields([{ name: "Tiempo restante", value: `🕒 ${tiempoRestante(evento.nextUnix)}`, inline: false }]);
-
-        const mensaje = await canal.send({ embeds: [embed] }).catch(() => null);
-        mensajesDinamicos[canalId] = mensaje;
-
-        await canal.send(`🚨 ¡El evento **${evento.nombre}** empieza en 10 minutos!`).catch(() => null);
-      }
+      const msg = await canal.send(embed ? { embeds: [embed] } : texto).catch(() => null);
+      if (msg) setTimeout(() => msg.delete().catch(() => null), AVISO_BORRADO_MS);
     }
-
-    const tiempoParaEvento = evento.nextUnix - moment().tz(ZONA_HORARIA).valueOf();
-    setTimeout(() => {
-      for (const serverId in SERVIDORES) {
-        for (const canalId of SERVIDORES[serverId]) {
-          const canal = client.channels.cache.get(canalId);
-          if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`).catch(() => null);
-        }
-      }
-      evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
-      programarEvento(evento);
-    }, tiempoParaEvento);
-
-  }, avisoUnix - ahora);
+  }
 }
 
-// Inicio del bot
-client.once("ready", async () => {
-  console.log("🤖 Bot encendido correctamente");
-  setInterval(actualizarMensajes, 5000);
-  actualizarMensajes();
-  eventos.forEach(evento => programarEvento(evento));
+// ================= ROTACIÓN =================
+function iniciarEvento() {
+  const evento = eventoActual();
+  inicioEventoActual = Date.now();
+  guardarEstado();
+
+  enviarAviso(`🔥 ¡El evento **${evento.nombre}** ha comenzado!`);
+
+  setTimeout(() => {
+    indiceEventoActual = (indiceEventoActual + 1) % eventos.length;
+    guardarEstado();
+    programarEvento();
+  }, evento.intervaloHoras * 60 * 60 * 1000);
+}
+
+function programarEvento() {
+  const evento = eventoActual();
+  const fin = finEvento();
+
+  const aviso10m = fin - 10 * 60 * 1000;
+
+  setTimeout(() => {
+    const embed = new EmbedBuilder()
+      .setTitle(`⏰ ${evento.nombre} termina en 10 minutos`)
+      .setColor(evento.color);
+    enviarAviso(null, embed);
+  }, aviso10m - Date.now());
+
+  setTimeout(iniciarEvento, fin - Date.now());
+}
+
+// ================= READY =================
+client.once("ready", () => {
+  console.log("🤖 Bot Brainrot listo");
+  cargarEstado();
+  actualizarTabla();
+  setInterval(actualizarTabla, 5000);
+  programarEvento();
 });
 
-// Comando de prueba
-client.on("messageCreate", message => {
-  if (message.author.bot) return;
-  if (message.content.toLowerCase() === "!ping") {
-    message.channel.send("🏓 Pong! El bot funciona").catch(() => null);
-  }
-});
-
-console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
 client.login(process.env.DISCORD_TOKEN);
