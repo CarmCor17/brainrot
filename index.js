@@ -46,7 +46,7 @@ function nextUnixEvento(hora, minuto, intervaloHoras) {
 
 // Definición de eventos con horarios fijos
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: nextUnixEvento(14, 35, 4), intervaloHoras: 4, color: 0x4B4B4B },
+  { nombre: "🌑 Darkness", nextUnix: nextUnixEvento(2, 35, 4), intervaloHoras: 4, color: 0x4B4B4B },
   { nombre: "🧪 Toxic", nextUnix: nextUnixEvento(4, 30, 4), intervaloHoras: 4, color: 0x00FF00 },
   { nombre: "🍀 Lucky Rot", nextUnix: nextUnixEvento(7, 0, 5), intervaloHoras: 5, color: 0xFFD700 }
 ];
