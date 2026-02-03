@@ -11,7 +11,7 @@ const client = new Client({
   ]
 });
 
-// Zona horaria interna para cálculos
+// Zona horaria principal para cálculos internos
 const ZONA_HORARIA = "America/Hermosillo";
 
 // Servidores y canales desde .env
@@ -34,15 +34,15 @@ console.log("🔹 SERVIDORES Y CANALES CONFIGURADOS:", SERVIDORES);
 
 // Definición de eventos
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 14:00", ZONA_HORARIA).valueOf(), intervaloHoras: 4 },
-  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 01:45", ZONA_HORARIA).valueOf(), intervaloHoras: 3 },
-  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 6 }
+  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 2:10", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
+  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 04:30", ZONA_HORARIA).valueOf(), intervaloHoras: 3, color: 0x00FF00 },
+  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 6, color: 0xFFD700 }
 ];
 
-const mensajesDinamicos = {};
+const mensajesDinamicos = {}; // Mensaje por canal
 const ultimoEmbedStringPorCanal = {};
 
-// Función para calcular tiempo restante
+// Función tiempo restante
 function tiempoRestante(timestamp) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   let diff = timestamp - ahora;
@@ -62,14 +62,14 @@ function eventosOrdenados() {
   return eventos.slice().sort((a, b) => a.nextUnix - b.nextUnix);
 }
 
-// Actualiza embeds en todos los canales
+// Actualiza mensajes fijos con tiempo restante (sin spamear)
 async function actualizarMensajes() {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   const embed = new EmbedBuilder()
     .setTitle("📅 Próximos eventos de Steal the Brainrot")
     .setColor(0x00FF00)
     .setTimestamp(moment().tz(ZONA_HORARIA).toDate())
-    .setFooter({ text: "Tiempo restante" });
+    .setFooter({ text: "Tiempo restante mostrado para todos los usuarios" });
 
   const ordenados = eventosOrdenados();
   const proximoEvento = ordenados.find(e => e.nextUnix > ahora) || ordenados[0];
@@ -82,16 +82,15 @@ async function actualizarMensajes() {
 
     if (ahora >= inicio && ahora < fin) {
       nombre = `🔥 ${nombre} (En curso)`;
-      valor = `⏱ Termina en ${tiempoRestante(fin)}`;
+      valor = `🕒 Termina en ${tiempoRestante(fin)}`;
     } else {
       if (evento === proximoEvento) nombre = `➡️ **${nombre}**`;
-      valor = `⏱ Comienza en ${tiempoRestante(inicio)}`;
+      valor = `🕒 Comienza en ${tiempoRestante(inicio)}`;
     }
 
     embed.addFields({ name: nombre, value: valor, inline: false });
   });
 
-  // Recorrer cada servidor y canal
   for (const serverId in SERVIDORES) {
     for (const canalId of SERVIDORES[serverId]) {
       const canal = await client.channels.fetch(canalId).catch(() => null);
@@ -119,7 +118,7 @@ async function actualizarMensajes() {
   }
 }
 
-// Programar avisos y repetir eventos
+// Programar eventos con alertas de 10 minutos
 function programarEvento(evento) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
 
@@ -127,24 +126,52 @@ function programarEvento(evento) {
     evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
   }
 
-  const avisoUnix = evento.nextUnix - 10 * 60 * 1000;
+  const avisoUnix = evento.nextUnix - 10 * 60 * 1000; // 10 minutos antes
 
   setTimeout(async () => {
     for (const serverId in SERVIDORES) {
       for (const canalId of SERVIDORES[serverId]) {
         const canal = await client.channels.fetch(canalId).catch(() => null);
-        if (canal) canal.send(`⏰ ¡El evento **${evento.nombre}** comienza en 10 minutos!`).catch(() => null);
+        if (!canal) continue;
+
+        // Borrar mensaje anterior de tiempo restante
+        if (mensajesDinamicos[canalId]) {
+          await mensajesDinamicos[canalId].delete().catch(() => null);
+          mensajesDinamicos[canalId] = null;
+        }
+
+        // Enviar mensaje nuevo con alerta de 10 minutos
+        const embed = new EmbedBuilder()
+          .setTitle(`⏰ ¡El evento ${evento.nombre} comienza en 10 minutos!`)
+          .setColor(evento.color)
+          .setTimestamp(moment().tz(ZONA_HORARIA).toDate())
+          .addFields([
+            {
+              name: "Tiempo restante",
+              value: `🕒 ${tiempoRestante(evento.nextUnix)}`,
+              inline: false
+            }
+          ]);
+
+        const mensaje = await canal.send({ embeds: [embed] }).catch(() => null);
+        mensajesDinamicos[canalId] = mensaje;
+
+        // Enviar alerta de texto adicional
+        await canal.send(`🚨 ¡El evento **${evento.nombre}** empieza en 10 minutos!`).catch(() => null);
       }
     }
 
+    // Esperar hasta que comience el evento
     const tiempoParaEvento = evento.nextUnix - moment().tz(ZONA_HORARIA).valueOf();
-    setTimeout(async () => {
+    setTimeout(() => {
       for (const serverId in SERVIDORES) {
         for (const canalId of SERVIDORES[serverId]) {
-          const canal = await client.channels.fetch(canalId).catch(() => null);
+          const canal = client.channels.cache.get(canalId);
           if (canal) canal.send(`🚨 ¡El evento **${evento.nombre}** ha comenzado!`).catch(() => null);
         }
       }
+
+      // Preparar siguiente ciclo del evento
       evento.nextUnix += evento.intervaloHoras * 60 * 60 * 1000;
       programarEvento(evento);
     }, tiempoParaEvento);
@@ -168,5 +195,8 @@ client.on("messageCreate", message => {
   }
 });
 
+// Confirmación de token cargado
 console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
+
+// Login
 client.login(process.env.DISCORD_TOKEN);
