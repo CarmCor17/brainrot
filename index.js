@@ -1,8 +1,8 @@
 require("dotenv").config();
-
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const moment = require("moment-timezone");
 
+// Configuración del bot
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -14,21 +14,20 @@ const client = new Client({
 const ZONA_HORARIA = "America/Hermosillo";
 const ID_CANAL_EVENTOS = "1467988584966652073";
 
-// Eventos con Unix Time inicial, intervalo y color
+// Definición de eventos
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 00:00", "YYYY-MM-DD HH:mm:ss", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
-  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 01:30", "YYYY-MM-DD HH:mm:ss", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x00FF00 },
-  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 03:00", "YYYY-MM-DD HH:mm:ss", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
+  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
+  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 01:30", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x00FF00 },
+  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 03:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
 ];
 
 let mensajeDinamico;
 let ultimoEmbedString = "";
 
-// Calcula tiempo restante y muestra segundos solo si falta menos de 1 minuto
+// Calcula tiempo restante
 function tiempoRestante(timestamp) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   let diff = timestamp - ahora;
-
   if (diff < 0) diff = 0;
 
   const totalSegundos = Math.floor(diff / 1000);
@@ -37,7 +36,6 @@ function tiempoRestante(timestamp) {
   const segundos = totalSegundos % 60;
 
   if (totalSegundos < 60) return `${segundos}s`;
-
   return `${horas}h ${minutos}m`;
 }
 
@@ -67,11 +65,9 @@ async function actualizarMensaje() {
     const fin = evento.nextUnix + evento.intervaloHoras * 60 * 60 * 1000;
 
     if (ahora >= inicio && ahora < fin) {
-      // Evento en curso
       nombre = `🔥 ${nombre} (En curso)`;
       valor = `⏰ ${moment(inicio).tz(ZONA_HORARIA).format("HH:mm:ss")} hs - ${moment(fin).tz(ZONA_HORARIA).format("HH:mm:ss")} hs\n🕒 Termina en ${tiempoRestante(fin)}`;
     } else {
-      // Evento futuro
       if (evento === proximoEvento) nombre = `➡️ **${nombre}**`;
       valor = `⏰ ${moment(inicio).tz(ZONA_HORARIA).format("HH:mm:ss")} hs\n🕒 Comienza en ${tiempoRestante(inicio)}`;
     }
@@ -79,7 +75,6 @@ async function actualizarMensaje() {
     embed.addFields({ name: nombre, value: valor, inline: false });
   });
 
-  // Editar solo si cambió algo visible
   const embedString = JSON.stringify(embed.data);
   if (embedString !== ultimoEmbedString) {
     try {
@@ -91,7 +86,7 @@ async function actualizarMensaje() {
   }
 }
 
-// Programar avisos
+// Programar avisos de eventos
 function programarEvento(evento) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
 
@@ -118,7 +113,7 @@ function programarEvento(evento) {
 }
 
 // Inicio del bot
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log("🤖 Bot encendido correctamente");
 
   const canal = client.channels.cache.get(ID_CANAL_EVENTOS);
@@ -131,7 +126,6 @@ client.once("ready", async () => {
     mensajeDinamico = await canal.send({ content: "Cargando próximos eventos..." });
   }
 
-  // Actualizar cada 5 segundos normalmente
   setInterval(actualizarMensaje, 5000);
   actualizarMensaje();
 
@@ -141,16 +135,17 @@ client.once("ready", async () => {
 // Comando de prueba
 client.on("messageCreate", message => {
   if (message.author.bot) return;
-  if (message.content === "!ping") message.channel.send("🏓 Pong! El bot funciona");
+  if (message.content.toLowerCase() === "!ping") {
+    message.channel.send("🏓 Pong! El bot funciona").catch(console.error);
+  }
 });
 
-// Solo confirma que el token existe, sin mostrarlo
-console.log("🤖 Bot encendido correctamente");
+// Confirmación de token cargado sin exponerlo
 console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
 
-
-
+// Login seguro
 client.login(process.env.DISCORD_TOKEN);
+
 
 
 
