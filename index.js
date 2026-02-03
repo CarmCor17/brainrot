@@ -11,6 +11,7 @@ const client = new Client({
   ]
 });
 
+// Zona horaria interna para cálculos
 const ZONA_HORARIA = "America/Hermosillo";
 
 // Servidores y canales desde .env
@@ -31,28 +32,17 @@ process.env.SERVIDORES_Y_CANALES.split(";").forEach(entry => {
 
 console.log("🔹 SERVIDORES Y CANALES CONFIGURADOS:", SERVIDORES);
 
-// Depuración: verificar canales
-(async () => {
-  for (const serverId in SERVIDORES) {
-    for (const canalId of SERVIDORES[serverId]) {
-      const canal = await client.channels.fetch(canalId).catch(() => null);
-      if (canal) console.log("✅ Canal encontrado:", canal.id, canal.name);
-      else console.warn("❌ No se pudo encontrar el canal:", canalId);
-    }
-  }
-})();
-
 // Definición de eventos
 const eventos = [
-  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x4B4B4B },
-  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 01:30", ZONA_HORARIA).valueOf(), intervaloHoras: 4, color: 0x00FF00 },
-  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 03:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5, color: 0xFFD700 }
+  { nombre: "🌑 Darkness", nextUnix: moment.tz("2026-02-02 14:00", ZONA_HORARIA).valueOf(), intervaloHoras: 4 },
+  { nombre: "🧪 Toxic", nextUnix: moment.tz("2026-02-02 04:30", ZONA_HORARIA).valueOf(), intervaloHoras: 4 },
+  { nombre: "🍀 Lucky Rot", nextUnix: moment.tz("2026-02-02 00:00", ZONA_HORARIA).valueOf(), intervaloHoras: 5 }
 ];
 
-const mensajesDinamicos = {}; // Mensaje por canal
+const mensajesDinamicos = {};
 const ultimoEmbedStringPorCanal = {};
 
-// Función tiempo restante
+// Función para calcular tiempo restante
 function tiempoRestante(timestamp) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
   let diff = timestamp - ahora;
@@ -79,7 +69,7 @@ async function actualizarMensajes() {
     .setTitle("📅 Próximos eventos de Steal the Brainrot")
     .setColor(0x00FF00)
     .setTimestamp(moment().tz(ZONA_HORARIA).toDate())
-    .setFooter({ text: "Zona horaria: Nogales, Sonora" });
+    .setFooter({ text: "Tiempo restante" });
 
   const ordenados = eventosOrdenados();
   const proximoEvento = ordenados.find(e => e.nextUnix > ahora) || ordenados[0];
@@ -92,10 +82,10 @@ async function actualizarMensajes() {
 
     if (ahora >= inicio && ahora < fin) {
       nombre = `🔥 ${nombre} (En curso)`;
-      valor = `⏰ ${moment(inicio).tz(ZONA_HORARIA).format("HH:mm:ss")} hs - ${moment(fin).tz(ZONA_HORARIA).format("HH:mm:ss")} hs\n🕒 Termina en ${tiempoRestante(fin)}`;
+      valor = `⏱ Termina en ${tiempoRestante(fin)}`;
     } else {
       if (evento === proximoEvento) nombre = `➡️ **${nombre}**`;
-      valor = `⏰ ${moment(inicio).tz(ZONA_HORARIA).format("HH:mm:ss")} hs\n🕒 Comienza en ${tiempoRestante(inicio)}`;
+      valor = `⏱ Comienza en ${tiempoRestante(inicio)}`;
     }
 
     embed.addFields({ name: nombre, value: valor, inline: false });
@@ -105,16 +95,16 @@ async function actualizarMensajes() {
   for (const serverId in SERVIDORES) {
     for (const canalId of SERVIDORES[serverId]) {
       const canal = await client.channels.fetch(canalId).catch(() => null);
-      if (!canal) {
-        console.warn(`⚠️ No se pudo encontrar el canal: ${canalId}`);
-        continue;
-      }
+      if (!canal) continue;
 
       if (!mensajesDinamicos[canalId]) {
         const mensajes = await canal.messages.fetch({ limit: 10 }).catch(() => []);
         const encontrado = mensajes.find(msg => msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].title?.includes("Próximos eventos"));
-        if (encontrado) mensajesDinamicos[canalId] = encontrado;
-        else mensajesDinamicos[canalId] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
+        if (encontrado) {
+          mensajesDinamicos[canalId] = encontrado;
+        } else {
+          mensajesDinamicos[canalId] = await canal.send({ content: "Cargando próximos eventos..." }).catch(() => null);
+        }
       }
 
       const mensaje = mensajesDinamicos[canalId];
@@ -124,13 +114,12 @@ async function actualizarMensajes() {
       if (embedString !== ultimoEmbedStringPorCanal[canalId]) {
         await mensaje.edit({ embeds: [embed] }).catch(() => null);
         ultimoEmbedStringPorCanal[canalId] = embedString;
-        console.log(`✅ Embed actualizado en canal ${canalId}`);
       }
     }
   }
 }
 
-// Programar avisos en todos los canales
+// Programar avisos y repetir eventos
 function programarEvento(evento) {
   const ahora = moment().tz(ZONA_HORARIA).valueOf();
 
@@ -144,7 +133,7 @@ function programarEvento(evento) {
     for (const serverId in SERVIDORES) {
       for (const canalId of SERVIDORES[serverId]) {
         const canal = await client.channels.fetch(canalId).catch(() => null);
-        if (canal) canal.send(`⏰ ¡Atención! El evento **${evento.nombre}** comienza en 10 minutos (${moment(evento.nextUnix).tz(ZONA_HORARIA).format("HH:mm:ss")} hs). ¡Prepárate!`).catch(() => null);
+        if (canal) canal.send(`⏰ ¡El evento **${evento.nombre}** comienza en 10 minutos!`).catch(() => null);
       }
     }
 
@@ -179,8 +168,5 @@ client.on("messageCreate", message => {
   }
 });
 
-// Confirmación de token cargado
 console.log("Token cargado:", !!process.env.DISCORD_TOKEN);
-
-// Login
 client.login(process.env.DISCORD_TOKEN);
