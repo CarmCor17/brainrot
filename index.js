@@ -7,27 +7,16 @@ const moment = require("moment-timezone");
    🌐 SERVIDOR WEB (Express)
 ========================= */
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Ruta raíz para UptimeRobot
 app.get("/", (req, res) => res.send("Bot Brainrot activo ✅"));
 
-// Función para iniciar servidor con manejo de puerto ocupado
-function iniciarServidor(port) {
-  const server = app.listen(port, () => console.log(`🌐 Servidor web activo en puerto ${port}`));
+// Inicia servidor
+app.listen(PORT, () => console.log(`🌐 Servidor web activo en puerto ${PORT}`));
 
-  server.on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
-      console.log(`❌ Puerto ${port} ocupado, intentando de nuevo en 3000`);
-      setTimeout(() => iniciarServidor(port), 2000); // reintenta en 2 segundos
-    } else {
-      console.error(err);
-    }
-  });
-}
-
-// Inicia el servidor
-iniciarServidor(PORT);
+// Logs periódicos para mantener Fly activo
+setInterval(() => console.log("⏱️ Bot sigue activo"), 240_000);
 
 /* =========================
    🤖 DISCORD CLIENT
@@ -210,6 +199,7 @@ const comandos = [
 client.once("ready", async () => {
   console.log(`🤖 Bot conectado como ${client.user.tag}`);
 
+  // Registrar comandos
   const rest = new REST({ version:"10" }).setToken(process.env.DISCORD_TOKEN);
   try {
     await rest.put(Routes.applicationGuildCommands(client.user.id,"1468120013432164393"), { body: comandos });
@@ -251,8 +241,5 @@ client.on("interactionCreate", async interaction => {
     interaction.reply({ content:`✅ Evento ${ev.nombreTabla} programado a las ${hora}:${minuto<10?"0"+minuto:minuto}`, ephemeral:true });
   }
 });
-
-// Mantener Repl activo
-setInterval(() => console.log("⏱️ Bot sigue activo"), 240_000);
 
 client.login(process.env.DISCORD_TOKEN);
