@@ -4,24 +4,27 @@ const express = require("express");
 const moment = require("moment-timezone");
 
 /* =========================
-   🌐 SERVIDOR WEB (Express)
+   🌐 SERVIDOR WEB (Fly.io + UptimeRobot)
 ========================= */
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
-// Ruta raíz para UptimeRobot
-app.get("/", (req, res) => res.send("Bot Brainrot activo ✅"));
+// Ruta raíz (UptimeRobot)
+app.get("/", (req, res) => {
+  res.status(200).send("Bot Brainrot activo ✅");
+});
 
-// Inicia servidor
-app.listen(PORT, () => console.log(`🌐 Servidor web activo en puerto ${PORT}`));
-
-// Logs periódicos para mantener Fly activo
-setInterval(() => console.log("⏱️ Bot sigue activo"), 240_000);
+// ⚠️ Fly.io REQUIERE esto
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Servidor web activo en puerto ${PORT}`);
+});
 
 /* =========================
-   🤖 DISCORD CLIENT
+   🤖 CLIENTE DE DISCORD
 ========================= */
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
 
 /* =========================
    🏠 SERVIDORES Y CANALES
@@ -31,36 +34,38 @@ const SERVIDORES = {
 };
 
 /* =========================
-   ⏰ FUNCIONES DE TIEMPO (Hora de Nogales, Sonora)
+   ⏰ TIEMPO (Nogales, Sonora)
 ========================= */
-function obtenerAhoraNogales() {
+function ahoraNogales() {
   return moment.tz("America/Hermosillo");
 }
 
 function programarEvento(ev, hora, minuto) {
-  let ahora = obtenerAhoraNogales();
-  let nuevaFecha = ahora.clone().hour(hora).minute(minuto).second(0).millisecond(0);
-  if (nuevaFecha.isBefore(ahora)) nuevaFecha.add(1, "day");
-  ev.proximoInicio = nuevaFecha;
+  const ahora = ahoraNogales();
+  let fecha = ahora.clone().hour(hora).minute(minuto).second(0).millisecond(0);
+  if (fecha.isBefore(ahora)) fecha.add(1, "day");
+  ev.proximoInicio = fecha;
 }
 
-function nextUnixEvento(ev) {
-  let ahora = obtenerAhoraNogales();
-  let evento = ev.proximoInicio.clone();
+function siguienteEvento(ev) {
+  const ahora = ahoraNogales();
+  let fecha = ev.proximoInicio.clone();
   const intervaloMs = (ev.intervaloHoras * 60 + ev.intervaloMinutos) * 60 * 1000;
-  while (evento.isBefore(ahora)) evento = evento.add(intervaloMs, "ms");
-  return evento.valueOf();
+  while (fecha.isBefore(ahora)) fecha.add(intervaloMs, "ms");
+  return fecha.valueOf();
 }
 
 function tiempoRestante(ms) {
   let diff = ms - Date.now();
   if (diff < 0) diff = 0;
-  const totalSeg = Math.floor(diff / 1000);
-  const h = Math.floor(totalSeg / 3600);
-  const m = Math.floor((totalSeg % 3600) / 60);
-  const s = totalSeg % 60;
-  if (totalSeg < 60) return `${s}s`;
-  if (h === 0) return `${m}m ${s}s`;
+
+  const s = Math.floor(diff / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+
+  if (s < 60) return `${sec}s`;
+  if (h === 0) return `${m}m ${sec}s`;
   return `${h}h ${m}m`;
 }
 
@@ -68,15 +73,15 @@ function tiempoRestante(ms) {
    📌 EVENTOS
 ========================= */
 const eventos = [
-  { nombre: "darkness", nombreTabla: "🌑 Darkness", intervaloHoras: 2, intervaloMinutos: 40, color: 0x4b4b4b, alerta10min: false, alertaInicio: false, proximoInicio: null },
-  { nombre: "aqua", nombreTabla: "💧 Aqua", intervaloHoras: 2, intervaloMinutos: 40, color: 0x00ffff, alerta10min: false, alertaInicio: false, proximoInicio: null },
-  { nombre: "lucky rot", nombreTabla: "🍀 Lucky Rot", intervaloHoras: 5, intervaloMinutos: 40, color: 0x00ff00, alerta10min: false, alertaInicio: false, proximoInicio: null },
-  { nombre: "toxic", nombreTabla: "☢️ Toxic", intervaloHoras: 3, intervaloMinutos: 0, color: 0xff0000, alerta10min: false, alertaInicio: false, proximoInicio: null },
-  { nombre: "neon", nombreTabla: "🔮 Neon", intervaloHoras: 10, intervaloMinutos: 40, color: 0xff00ff, alerta10min: false, alertaInicio: false, proximoInicio: null },
-  { nombre: "chocolate", nombreTabla: "🍫 Chocolate", intervaloHoras: 2, intervaloMinutos: 40, color: 0x8b4513, alerta10min: false, alertaInicio: false, proximoInicio: null },
+  { nombre: "darkness", nombreTabla: "🌑 Darkness", intervaloHoras: 2, intervaloMinutos: 40, color: 0x4b4b4b, alerta10: false, alertaInicio: false },
+  { nombre: "aqua", nombreTabla: "💧 Aqua", intervaloHoras: 2, intervaloMinutos: 40, color: 0x00ffff, alerta10: false, alertaInicio: false },
+  { nombre: "lucky rot", nombreTabla: "🍀 Lucky Rot", intervaloHoras: 5, intervaloMinutos: 40, color: 0x00ff00, alerta10: false, alertaInicio: false },
+  { nombre: "toxic", nombreTabla: "☢️ Toxic", intervaloHoras: 3, intervaloMinutos: 0, color: 0xff0000, alerta10: false, alertaInicio: false },
+  { nombre: "neon", nombreTabla: "🔮 Neon", intervaloHoras: 10, intervaloMinutos: 40, color: 0xff00ff, alerta10: false, alertaInicio: false },
+  { nombre: "chocolate", nombreTabla: "🍫 Chocolate", intervaloHoras: 2, intervaloMinutos: 40, color: 0x8b4513, alerta10: false, alertaInicio: false },
 ];
 
-// Configurar horarios iniciales
+// Horarios iniciales
 programarEvento(eventos[0], 22, 0);
 programarEvento(eventos[1], 5, 30);
 programarEvento(eventos[2], 0, 0);
@@ -89,27 +94,32 @@ programarEvento(eventos[5], 20, 20);
 ========================= */
 const mensajesTabla = {};
 let ultimaTabla = "";
-const alertasPendientes = [];
+const alertasActivas = [];
 
-async function manejarAlertas(ev, tipo) {
-  for (const servidorId in SERVIDORES) {
-    for (const canalId of SERVIDORES[servidorId]) {
-      const canal = await client.channels.fetch(canalId).catch(() => null);
+async function enviarAlerta(ev, tipo) {
+  const texto =
+    tipo === "10"
+      ? `⏳ Faltan 10 minutos para **${ev.nombreTabla}**`
+      : `✅ ¡Comenzó el evento **${ev.nombreTabla}**!`;
+
+  for (const sid in SERVIDORES) {
+    for (const cid of SERVIDORES[sid]) {
+      const canal = await client.channels.fetch(cid).catch(() => null);
       if (!canal) continue;
-      const texto = tipo === "10min" ? `⏳ Faltan 10 minutos para **${ev.nombreTabla}**` : `✅ ¡Comenzó el evento **${ev.nombreTabla}**!`;
-      const mensaje = await canal.send(texto);
+
+      const msg = await canal.send(texto);
 
       const timeout = setTimeout(async () => {
-        try { await mensaje.delete(); } catch (e) {}
-        const index = alertasPendientes.findIndex(a => a.mensaje.id === mensaje.id);
-        if (index !== -1) alertasPendientes.splice(index, 1);
-        if (alertasPendientes.length === 0) {
+        try { await msg.delete(); } catch {}
+        const i = alertasActivas.findIndex(a => a.msg.id === msg.id);
+        if (i !== -1) alertasActivas.splice(i, 1);
+        if (alertasActivas.length === 0) {
           ultimaTabla = "";
           await actualizarTabla();
         }
       }, 10 * 60_000);
 
-      alertasPendientes.push({ mensaje, timeout });
+      alertasActivas.push({ msg, timeout });
     }
   }
 }
@@ -122,123 +132,104 @@ async function actualizarTabla() {
 
   let contenido = "";
 
-  const eventosOrdenados = eventos
-    .map(ev => ({ ev, next: nextUnixEvento(ev) }))
+  const ordenados = eventos
+    .map(ev => ({ ev, next: siguienteEvento(ev) }))
     .sort((a, b) => a.next - b.next);
 
-  eventosOrdenados.forEach(({ ev, next }) => {
-    const tiempo = tiempoRestante(next);
+  for (const { ev, next } of ordenados) {
+    const restante = tiempoRestante(next);
+    const diff = next - Date.now();
 
-    if (!ev.alerta10min && next - Date.now() <= 10*60_000 && next - Date.now() > 0) {
-      ev.alerta10min = true;
-      manejarAlertas(ev,"10min");
+    if (!ev.alerta10 && diff <= 10 * 60_000 && diff > 0) {
+      ev.alerta10 = true;
+      enviarAlerta(ev, "10");
     }
 
-    if (!ev.alertaInicio && next - Date.now() <= 0) {
+    if (!ev.alertaInicio && diff <= 0) {
       ev.alertaInicio = true;
-      manejarAlertas(ev,"inicio");
-      ev.alerta10min = false;
+      enviarAlerta(ev, "inicio");
+      ev.alerta10 = false;
       ev.alertaInicio = false;
     }
 
-    if (next - Date.now() <= 10_000) {
-      const now = Date.now();
-      embed.setColor(Math.floor(now/500)%2===0 ? 0xff0000 : 0xffa500);
-    } else if (next - Date.now() < 60_000) {
-      embed.setColor(0xff0000);
-    } else {
-      embed.setColor(ev.color);
-    }
+    embed.setColor(diff < 60_000 ? 0xff0000 : ev.color);
+    embed.addFields({ name: ev.nombreTabla, value: `⏳ Empieza en **${restante}**` });
+    contenido += `${ev.nombreTabla}:${restante}\n`;
+  }
 
-    embed.addFields({ name: ev.nombreTabla, value: `⏳ Empieza en **${tiempo}**`, inline: false });
-    contenido += `${ev.nombreTabla}: ${tiempo}\n`;
-  });
+  if (contenido !== ultimaTabla) {
+    for (const sid in SERVIDORES) {
+      for (const cid of SERVIDORES[sid]) {
+        const canal = await client.channels.fetch(cid).catch(() => null);
+        if (!canal) continue;
 
-  if(!ultimaTabla || contenido !== ultimaTabla){
-    for(const servidorId in SERVIDORES){
-      for(const canalId of SERVIDORES[servidorId]){
-        const canal = await client.channels.fetch(canalId).catch(()=>null);
-        if(!canal) continue;
-
-        if(!mensajesTabla[canalId]) mensajesTabla[canalId] = await canal.send({ embeds:[embed] });
-        else await mensajesTabla[canalId].edit({ embeds:[embed] });
+        if (!mensajesTabla[cid]) mensajesTabla[cid] = await canal.send({ embeds: [embed] });
+        else await mensajesTabla[cid].edit({ embeds: [embed] });
       }
     }
     ultimaTabla = contenido;
   }
 }
 
-let intervaloHandle = null;
-function iniciarIntervalo() {
-  clearInterval(intervaloHandle);
-  intervaloHandle = setInterval(actualizarTabla, 1000);
-}
+/* =========================
+   ⏱️ INTERVALO
+========================= */
+setInterval(actualizarTabla, 1000);
 
 /* =========================
-   COMANDOS DE DISCORD
+   🧾 COMANDOS SLASH
 ========================= */
 const comandos = [
   new SlashCommandBuilder()
     .setName("reiniciar-evento")
-    .setDescription("Reinicia un evento desde la hora actual")
-    .addStringOption(option=>option.setName("evento").setDescription("Nombre del evento").setRequired(true)),
+    .setDescription("Reinicia un evento")
+    .addStringOption(o => o.setName("evento").setRequired(true)),
   new SlashCommandBuilder()
     .setName("reiniciar-todos")
-    .setDescription("Reinicia todos los eventos desde la hora actual"),
+    .setDescription("Reinicia todos los eventos"),
   new SlashCommandBuilder()
     .setName("programar-evento")
-    .setDescription("Programar un evento a una hora específica")
-    .addStringOption(option=>option.setName("evento").setDescription("Nombre del evento").setRequired(true))
-    .addIntegerOption(option=>option.setName("hora").setDescription("Hora inicio 0-23").setRequired(true))
-    .addIntegerOption(option=>option.setName("minuto").setDescription("Minuto inicio 0-59").setRequired(true))
-].map(cmd=>cmd.toJSON());
+    .setDescription("Programa un evento")
+    .addStringOption(o => o.setName("evento").setRequired(true))
+    .addIntegerOption(o => o.setName("hora").setRequired(true))
+    .addIntegerOption(o => o.setName("minuto").setRequired(true)),
+].map(c => c.toJSON());
 
 /* =========================
-   🚀 INICIO DEL BOT
+   🚀 INICIO
 ========================= */
 client.once("ready", async () => {
   console.log(`🤖 Bot conectado como ${client.user.tag}`);
 
-  // Registrar comandos
-  const rest = new REST({ version:"10" }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    await rest.put(Routes.applicationGuildCommands(client.user.id,"1468120013432164393"), { body: comandos });
-    console.log("✅ Comandos registrados en el servidor");
-  } catch(err) { console.error(err); }
+  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+  await rest.put(
+    Routes.applicationGuildCommands(client.user.id, "1468120013432164393"),
+    { body: comandos }
+  );
 
-  iniciarIntervalo();
+  console.log("✅ Comandos registrados");
 });
 
-// Manejo de comandos
-client.on("interactionCreate", async interaction => {
-  if(!interaction.isChatInputCommand()) return;
+client.on("interactionCreate", async i => {
+  if (!i.isChatInputCommand()) return;
 
-  if(interaction.commandName === "reiniciar-evento") {
-    const ev = eventos.find(e => e.nombre.toLowerCase() === interaction.options.getString("evento").toLowerCase());
-    if(!ev) return interaction.reply({ content:"Evento no encontrado", ephemeral:true });
-    ev.proximoInicio = obtenerAhoraNogales();
-    iniciarIntervalo();
-    interaction.reply({ content:`Evento ${ev.nombreTabla} reiniciado desde ahora ✅`, ephemeral:true });
-    await actualizarTabla();
+  if (i.commandName === "reiniciar-evento") {
+    const ev = eventos.find(e => e.nombre === i.options.getString("evento").toLowerCase());
+    if (!ev) return i.reply({ content: "Evento no encontrado", ephemeral: true });
+    ev.proximoInicio = ahoraNogales();
+    i.reply({ content: "Evento reiniciado ✅", ephemeral: true });
   }
 
-  if(interaction.commandName === "reiniciar-todos") {
-    eventos.forEach(ev => ev.proximoInicio = obtenerAhoraNogales());
-    iniciarIntervalo();
-    interaction.reply({ content:"✅ Todos los eventos reiniciados desde ahora", ephemeral:true });
-    await actualizarTabla();
+  if (i.commandName === "reiniciar-todos") {
+    eventos.forEach(ev => (ev.proximoInicio = ahoraNogales()));
+    i.reply({ content: "Todos reiniciados ✅", ephemeral: true });
   }
 
-  if(interaction.commandName === "programar-evento") {
-    const nombre = interaction.options.getString("evento");
-    const hora = interaction.options.getInteger("hora");
-    const minuto = interaction.options.getInteger("minuto");
-    const ev = eventos.find(e => e.nombre.toLowerCase() === nombre.toLowerCase());
-    if(!ev) return interaction.reply({ content:"Evento no encontrado", ephemeral:true });
-    programarEvento(ev, hora, minuto);
-    iniciarIntervalo();
-    await actualizarTabla();
-    interaction.reply({ content:`✅ Evento ${ev.nombreTabla} programado a las ${hora}:${minuto<10?"0"+minuto:minuto}`, ephemeral:true });
+  if (i.commandName === "programar-evento") {
+    const ev = eventos.find(e => e.nombre === i.options.getString("evento").toLowerCase());
+    if (!ev) return i.reply({ content: "Evento no encontrado", ephemeral: true });
+    programarEvento(ev, i.options.getInteger("hora"), i.options.getInteger("minuto"));
+    i.reply({ content: "Evento programado ✅", ephemeral: true });
   }
 });
 
